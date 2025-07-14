@@ -1,0 +1,271 @@
+# values.yaml
+global:
+  namespace: orocommerce           # Namespace Kubernetes
+  labels:                          # Labels globaux à appliquer à tous les objets
+    app: orocommerce
+  imagePullSecrets: []            # Si vous avez des secrets pour récupérer vos images
+
+# Valeurs par défaut manquantes
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: oroinc/runtime
+  pullPolicy: IfNotPresent
+  tag: "6.1-latest"
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi                   # Réduit pour environnement de développement
+  requests:
+    cpu: 200m
+    memory: 512Mi                 # Beaucoup plus raisonnable
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: []
+volumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Configuration OroCommerce spécifique
+orocommerce:
+  env:
+    ORO_USER_NAME: "admin"
+    ORO_USER_PASSWORD: "admin"
+    ORO_USER_EMAIL: "admin@example.com"
+    ORO_SAMPLE_DATA: "y"
+    ORO_ORGANIZATION_NAME: "ORO"
+    ORO_LANGUAGE: "en"
+    ORO_APP_DOMAIN: "oro.demo"
+    ORO_NGINX_HTTP_PORT: "80"
+    ORO_PHP_FPM_PORT: "9000"
+    ORO_WEBSOCKET_BACKEND_PORT: "8080"
+
+# Services PHP secondaires
+phpfpm:
+  image:
+    repository: oroinc/runtime
+    tag: "6.1-latest"
+    pullPolicy: IfNotPresent
+  command: "php-fpm"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+consumer:
+  image:
+    repository: oroinc/runtime
+    tag: "6.1-latest"
+    pullPolicy: IfNotPresent
+  command: "consumer"
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+cron:
+  image:
+    repository: oroinc/runtime
+    tag: "6.1-latest"
+    pullPolicy: IfNotPresent
+  command: "cron"
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+websocket:
+  image:
+    repository: oroinc/runtime
+    tag: "6.1-latest"
+    pullPolicy: IfNotPresent
+  command: "websocket"
+  port: 8080
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+frontend:
+  image:
+    repository: oroinc/docker-demo # Image Nginx/OroCommerce front
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP               # ou LoadBalancer/NodePort si besoin
+    port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  persistence:
+    enabled: true                 # on monte le volume oro_app
+    storageClass: hostpath
+    size: 1Gi
+
+backend:
+  image:
+    repository: oroinc/docker-demo # Image PHP-FPM
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  hpa:
+    enabled: true                 # HorizontalPodAutoscaler
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true                 # cache, logs, etc.
+    storageClass: hostpath
+    size: 2Gi
+
+database:
+  image:
+    repository: docker.io/oroinc/pgsql
+    tag: "17.2-alpine"            # Version RÉELLE d'OroCommerce
+    pullPolicy: IfNotPresent
+  env:
+    postgresRootPassword: "orodbpass"  # Valeurs RÉELLES d'OroCommerce
+    postgresUser: "orodbuser"
+    postgresPassword: "orodbpass"
+    postgresDatabase: "orodb"
+  service:
+    type: ClusterIP
+    port: 5432                    # Port PostgreSQL, PAS MySQL !
+  persistence:
+    enabled: true                 # PVC pour la base
+    storageClass: hostpath
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+cache:
+  image:
+    repository: redis
+    tag: 6.0
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 6379
+  persistence:
+    enabled: true                 # StatefulSet + PVC
+    storageClass: hostpath
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+search:
+  image:
+    repository: docker.elastic.co/elasticsearch/elasticsearch
+    tag: 7.9.3
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 9200
+  persistence:
+    enabled: true                 # pour les shards
+    storageClass: hostpath
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+monitoring:
+  enabled: true                   # on embarque Prometheus & Grafana
+  prometheus:
+    enabled: true
+    # Vous pouvez surcharger ici les valeurs du chart Prometheus
+  grafana:
+    enabled: true
+    # Idem pour Grafana (admin user, datasources...)
+
+ingress:
+  enabled: true
+  className: nginx                # si vous avez un IngressClass nginx
+  hosts:
+    - host: orocommerce.local
+      paths:
+        - path: /
+          service: frontend
+          port: 80
+  tls:
+    - secretName: orocommerce-tls
+      hosts:
+        - orocommerce.local
