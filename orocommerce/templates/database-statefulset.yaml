@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-database
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: database
+spec:
+  serviceName: {{ include "orocommerce.fullname" . }}-database
+  replicas: 1  # PostgreSQL = un seul master
+  selector:
+    matchLabels:
+      {{- include "orocommerce.selectorLabels" . | nindent 6 }}
+      component: database
+  template:
+    metadata:
+      labels:
+        {{- include "orocommerce.labels" . | nindent 8 }}
+        component: database
+    spec:
+      containers:
+      - name: postgresql
+        image: "{{ .Values.database.image.repository }}:{{ .Values.database.image.tag }}"
+        imagePullPolicy: {{ .Values.database.image.pullPolicy }}
+        ports:
+        - containerPort: 5432
+          name: postgresql
+        env:
+        - name: POSTGRES_ROOT_PASSWORD
+          value: {{ .Values.database.env.postgresRootPassword | quote }}
+        - name: POSTGRES_DB
+          value: {{ .Values.database.env.postgresDatabase | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.database.env.postgresUser | quote }}
+        - name: POSTGRES_PASSWORD
+          value: {{ .Values.database.env.postgresPassword | quote }}
+        resources:
+          {{- toYaml .Values.database.resources | nindent 10 }}
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U$(POSTGRES_USER)
+            - -d$(POSTGRES_DB)
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U$(POSTGRES_USER)
+            - -d$(POSTGRES_DB)
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+  volumeClaimTemplates:
+  - metadata:
+      name: postgresql-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: {{ .Values.database.persistence.storageClass | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.database.persistence.size | quote }}
