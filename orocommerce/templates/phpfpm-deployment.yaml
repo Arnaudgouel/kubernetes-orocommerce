@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-phpfpm
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: phpfpm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "orocommerce.selectorLabels" . | nindent 6 }}
+      component: phpfpm
+  template:
+    metadata:
+      labels:
+        {{- include "orocommerce.labels" . | nindent 8 }}
+        component: phpfpm
+    spec:
+      securityContext:
+        fsGroup: 33                   # groupe www-data
+      initContainers:
+      - name: web-init
+        image: "{{ .Values.phpfpm.image.repository }}:{{ .Values.phpfpm.image.tag }}"
+        command: 
+        - /bin/sh
+        - -c
+        - |
+          echo "Initializing nginx environment..."
+          mkdir -p /opt/oro-nginx/var
+          mkdir -p /opt/oro-nginx/etc/sites-available
+          chown -R 33:33 /opt/oro-nginx
+          echo "Nginx environment ready!"
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /opt/oro-nginx
+        securityContext:
+          runAsUser: 0                # root pour créer les répertoires
+      containers:
+      - name: phpfpm
+        securityContext:
+          runAsUser: 33               # utilisateur www-data
+          runAsGroup: 33
+        image: "{{ .Values.phpfpm.image.repository }}:{{ .Values.phpfpm.image.tag }}"
+        imagePullPolicy: {{ .Values.phpfpm.image.pullPolicy }}
+        command: ["php-fpm"]
+        ports:
+        - containerPort: 9000
+          name: phpfpm
+        env:
+        # Variables essentielles OroCommerce
+        - name: ORO_ENV
+          value: "prod"
+        - name: ORO_LOG_PATH
+          value: "php://stderr"
+        - name: ORO_USER_NAME
+          value: {{ .Values.orocommerce.env.ORO_USER_NAME | quote }}
+        - name: ORO_USER_PASSWORD
+          value: {{ .Values.orocommerce.env.ORO_USER_PASSWORD | quote }}
+        - name: ORO_USER_EMAIL
+          value: {{ .Values.orocommerce.env.ORO_USER_EMAIL | quote }}
+        - name: ORO_SAMPLE_DATA
+          value: {{ .Values.orocommerce.env.ORO_SAMPLE_DATA | quote }}
+        - name: ORO_ORGANIZATION_NAME
+          value: {{ .Values.orocommerce.env.ORO_ORGANIZATION_NAME | quote }}
+        - name: ORO_LANGUAGE
+          value: {{ .Values.orocommerce.env.ORO_LANGUAGE | quote }}
+        - name: ORO_APP_DOMAIN
+          value: {{ .Values.orocommerce.env.ORO_APP_DOMAIN | quote }}
+        # Configuration base de données
+        - name: ORO_DB_HOST
+          value: {{ include "orocommerce.fullname" . }}-database
+        - name: ORO_DB_PORT
+          value: "5432"
+        - name: ORO_DB_NAME
+          value: {{ .Values.database.env.postgresDatabase | quote }}
+        - name: ORO_DB_USER
+          value: {{ .Values.database.env.postgresUser | quote }}
+        - name: ORO_DB_PASSWORD
+          value: {{ .Values.database.env.postgresPassword | quote }}
+        # Configuration PHP-FPM pour éviter les erreurs de path  
+        - name: PHP_FPM_PID
+          value: "/tmp/php-fpm.pid"
+        resources:
+          {{- toYaml .Values.phpfpm.resources | nindent 10 }}
+        volumeMounts:
+        - name: oro-app
+          mountPath: /var/www/oro
+        - name: cache
+          mountPath: /var/www/oro/var/cache
+        - name: public-storage
+          mountPath: /var/www/oro/public/media
+        - name: private-storage
+          mountPath: /var/www/oro/var/data
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-config
+          mountPath: /opt/oro-nginx
+        livenessProbe:
+          tcpSocket:
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: oro-app
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-oro-app
+      - name: cache
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-cache
+      - name: public-storage
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-public-storage
+      - name: private-storage
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-private-storage
+      - name: tmp
+        emptyDir: {}                # tmpfs pour /tmp
+      - name: nginx-config
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-nginx-config 

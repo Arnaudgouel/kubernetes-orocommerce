@@ -1,0 +1,84 @@
+---
+# Volume principal - Code source OroCommerce
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-oro-app
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce              # Docker Desktop = ReadWriteOnce seulement
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.oroAppSize | quote }}
+
+---
+# Volume cache - Cache applicatif
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-cache
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.cacheSize | quote }}
+
+---
+# Volume stockage public - Médias et fichiers publics
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-public-storage
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.publicStorageSize | quote }}
+
+---
+# Volume stockage privé - Données privées
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-private-storage
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.privateStorageSize | quote }}
+
+---
+# Volume nginx - Configuration nginx
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "orocommerce.fullname" . }}-nginx-config
+  labels:
+    {{- include "orocommerce.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: 1Gi                # Config nginx = petite taille 

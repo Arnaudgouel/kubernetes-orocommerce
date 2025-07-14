@@ -4,6 +4,7 @@ metadata:
   name: {{ include "orocommerce.fullname" . }}
   labels:
     {{- include "orocommerce.labels" . | nindent 4 }}
+    component: web
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -22,6 +23,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        component: web
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -29,35 +31,147 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "orocommerce.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        fsGroup: 33                   # groupe www-data pour OroCommerce
+      initContainers:
+      - name: web-init
+        image: "oroinc/orocommerce-application:6.1.0"  # Image avec outils d'init
+        command: 
+        - /bin/sh
+        - -c
+        - |
+          echo "Running OroCommerce nginx-init..."
+          /usr/local/bin/docker-entrypoint.sh nginx-init || true
+          echo "Patching upstream configuration..."
+          find /opt/oro-nginx/etc -name "*.conf" -exec sed -i 's/orocommerce-app-php-fpm/{{ include "orocommerce.fullname" . }}-phpfpm/g' {} \;
+          # Commenter les upstreams WebSocket car nous n'avons pas de service WebSocket
+          find /opt/oro-nginx/etc -name "*.conf" -exec sed -i 's/upstream.*websocket.*/# &/g' {} \;
+          find /opt/oro-nginx/etc -name "*.conf" -exec sed -i '/server.*websocket/s/^/# /' {} \;
+          find /opt/oro-nginx/etc -name "*.conf" -exec sed -i '/proxy_pass.*websocket/s/^/# /' {} \;
+          sed -i '/gridfs/d; /mongo/d' /opt/oro-nginx/etc/sites-available/*.conf
+          echo "Testing patched nginx configuration..."
+          nginx -t -c /opt/oro-nginx/etc/nginx.conf
+          echo "OroCommerce nginx-init completed!"
+        env:
+        # Variables OroCommerce pour nginx-init
+        - name: ORO_ENV
+          value: "prod"
+        - name: ORO_APP_DOMAIN
+          value: {{ .Values.orocommerce.env.ORO_APP_DOMAIN | quote }}
+        - name: ORO_NGINX_HTTP_PORT
+          value: {{ .Values.orocommerce.env.ORO_NGINX_HTTP_PORT | quote }}
+        - name: ORO_PHP_FPM_HOST
+          value: {{ include "orocommerce.fullname" . }}-phpfpm
+        - name: ORO_PHP_FPM_PORT
+          value: {{ .Values.orocommerce.env.ORO_PHP_FPM_PORT | quote }}
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /opt/oro-nginx
+        - name: oro-app
+          mountPath: /var/www/oro
+        securityContext:
+          runAsUser: 0                # root pour l'initialisation
       containers:
         - name: {{ .Chart.Name }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
+            runAsUser: 33             # utilisateur www-data
+            runAsGroup: 33
           {{- end }}
-          image: "nginx:alpine"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/docker-entrypoint.sh"]
+          args: ["nginx"]
           ports:
             - name: http
               containerPort: 80
               protocol: TCP
+          env:
+          # Variables essentielles OroCommerce
+          - name: ORO_ENV
+            value: "prod"
+          - name: ORO_LOG_PATH
+            value: "php://stderr"
+          - name: ORO_USER_NAME
+            value: {{ .Values.orocommerce.env.ORO_USER_NAME | quote }}
+          - name: ORO_USER_PASSWORD
+            value: {{ .Values.orocommerce.env.ORO_USER_PASSWORD | quote }}
+          - name: ORO_USER_EMAIL
+            value: {{ .Values.orocommerce.env.ORO_USER_EMAIL | quote }}
+          - name: ORO_SAMPLE_DATA
+            value: {{ .Values.orocommerce.env.ORO_SAMPLE_DATA | quote }}
+          - name: ORO_ORGANIZATION_NAME
+            value: {{ .Values.orocommerce.env.ORO_ORGANIZATION_NAME | quote }}
+          - name: ORO_LANGUAGE
+            value: {{ .Values.orocommerce.env.ORO_LANGUAGE | quote }}
+          - name: ORO_APP_DOMAIN
+            value: {{ .Values.orocommerce.env.ORO_APP_DOMAIN | quote }}
+          - name: ORO_NGINX_HTTP_PORT
+            value: {{ .Values.orocommerce.env.ORO_NGINX_HTTP_PORT | quote }}
+          # Configuration PHP-FPM connexion
+          - name: ORO_PHP_FPM_HOST
+            value: {{ include "orocommerce.fullname" . }}-phpfpm
+          - name: ORO_PHP_FPM_PORT
+            value: {{ .Values.orocommerce.env.ORO_PHP_FPM_PORT | quote }}
+          # Configuration base de données
+          - name: ORO_DB_HOST
+            value: {{ include "orocommerce.fullname" . }}-database
+          - name: ORO_DB_PORT
+            value: "5432"
+          - name: ORO_DB_NAME
+            value: {{ .Values.database.env.postgresDatabase | quote }}
+          - name: ORO_DB_USER
+            value: {{ .Values.database.env.postgresUser | quote }}
+          - name: ORO_DB_PASSWORD
+            value: {{ .Values.database.env.postgresPassword | quote }}
           livenessProbe:
             httpGet:
               path: /
               port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /
               port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+          - name: oro-app
+            mountPath: /var/www/oro
+          - name: cache
+            mountPath: /var/www/oro/var/cache
+            readOnly: true             # nginx lit le cache, ne l'écrit pas
+          - name: public-storage
+            mountPath: /var/www/oro/public/media
+            readOnly: true             # nginx sert les médias en lecture seule
+          - name: private-storage
+            mountPath: /var/www/oro/var/data
+            readOnly: true
+          - name: nginx-config
+            mountPath: /opt/oro-nginx
+          {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
       volumes:
+      - name: oro-app
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-oro-app
+      - name: cache
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-cache
+      - name: public-storage
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-public-storage
+      - name: private-storage
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-private-storage
+      - name: nginx-config
+        persistentVolumeClaim:
+          claimName: {{ include "orocommerce.fullname" . }}-nginx-config
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
