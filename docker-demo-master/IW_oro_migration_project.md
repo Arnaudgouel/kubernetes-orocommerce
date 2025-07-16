@@ -14,13 +14,13 @@ Migrer l'application **OroCommerce Demo** (https://github.com/oroinc/docker-demo
 
 ### Critère 1 : Exploiter et surveiller l'activité du système (Coeff. 1)
 - Maintenir un flux de données en temps réel
-- Mettre en place des outils de monitoring
-- Administrer les données selon les normes
+- Mettre en place des outils de monitoring (log et metriques de performance)
+- Administrer les données selon les normes (backup générés)
 
 ### Critère 2 : Optimiser l'exploitation des données (Coeff. 2)
-- Adapter la visualisation des données
-- Optimiser les ressources (écoconception)
-- Superviser la répartition de charge
+- Adapter la visualisation des données (monitoring, dashboard)
+- Optimiser les ressources (écoconception) (pas donner trop de ressources inutiles) (projets open sources qui peuvent analyser)
+- Superviser la répartition de charge (outil qui propose l'administration)
 
 ---
 
@@ -35,7 +35,7 @@ OPTIONNEL: - Application **fonctionnelle** en haute disponibilité
 ### 2. Documentation 
 - Architecture Kubernetes avec diagrammes
 - Guide d'installation
-- Analyse comparative avant/après
+- Analyse comparative avant/après ()
 
 ---
 
